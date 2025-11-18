@@ -1,10 +1,20 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { User, UserRole, Department, Subject, Session, AttendanceRecord, View } from './types';
 
 // Mock Initial Data
 const MOCK_ADMIN: User = { id: 'adm_1', name: 'System Admin', email: 'admin@college.edu', role: UserRole.ADMIN };
 const MOCK_FACULTY: User = { id: 'fac_1', name: 'Dr. Smith', email: 'smith@college.edu', role: UserRole.FACULTY, department: 'CS' };
-const MOCK_STUDENT: User = { id: 'stu_1', name: 'John Doe', email: 'john@college.edu', role: UserRole.STUDENT, department: 'CS', deviceId: 'device_123' };
+const MOCK_STUDENT: User = { id: 'stu_1', name: 'John Doe', email: 'john@college.edu', role: UserRole.STUDENT, department: 'CS' };
+
+export interface LoginResult {
+  success: boolean;
+  message?: string;
+}
+
+export interface AttendanceResult {
+    success: boolean;
+    message: string;
+}
 
 interface AppState {
   currentUser: User | null;
@@ -14,13 +24,13 @@ interface AppState {
   subjects: Subject[];
   sessions: Session[];
   attendance: AttendanceRecord[];
-  login: (role: UserRole, email: string) => boolean;
+  login: (role: UserRole, email: string) => LoginResult;
   logout: () => void;
   registerUser: (user: User) => void;
   createSession: (session: Session) => void;
   endSession: (sessionId: string) => void;
   updateSessionToken: (sessionId: string, token: string) => void;
-  markAttendance: (sessionId: string, studentId: string) => void;
+  markAttendance: (sessionId: string, studentId: string, scannedToken: string) => AttendanceResult;
   navigateTo: (view: View) => void;
 }
 
@@ -51,23 +61,85 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, []);
 
-  const login = (role: UserRole, email: string) => {
+  const navigateTo = useCallback((view: View) => setCurrentView(view), []);
+
+  const registerUser = useCallback((user: User) => {
+    setUsers(prev => [...prev, user]);
+  }, []);
+
+  const createSession = useCallback((session: Session) => {
+    setSessions(prev => [...prev, session]);
+  }, []);
+
+  const endSession = useCallback((sessionId: string) => {
+    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, isActive: false, endTime: Date.now() } : s));
+  }, []);
+
+  const updateSessionToken = useCallback((sessionId: string, token: string) => {
+    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, currentDynamicToken: token } : s));
+  }, []);
+
+  const markAttendance = useCallback((sessionId: string, studentId: string, scannedToken: string): AttendanceResult => {
+    // 1. Find Session
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return { success: false, message: "Session not found." };
+    
+    // 2. Check Active
+    if (!session.isActive) return { success: false, message: "Session has ended." };
+
+    // 3. SECURITY CHECK: Validate Token
+    // The scanned token must match the current token on server/faculty device
+    // We allow a small grace period in a real app, but strict matching here for demo
+    if (session.currentDynamicToken !== scannedToken) {
+        return { success: false, message: "Invalid or Expired QR Code. Please scan the current code." };
+    }
+
+    let alreadyMarked = false;
+    setAttendance(prev => {
+        // Check if already marked to prevent duplicates
+        if (prev.some(a => a.sessionId === sessionId && a.studentId === studentId)) {
+            alreadyMarked = true;
+            return prev;
+        }
+        
+        const record: AttendanceRecord = {
+          id: `att_${Date.now()}`,
+          sessionId,
+          studentId,
+          timestamp: Date.now(),
+          status: 'PRESENT'
+        };
+        return [...prev, record];
+    });
+
+    if (alreadyMarked) return { success: false, message: "Attendance already marked for this session." };
+
+    return { success: true, message: "Attendance marked successfully!" };
+  }, [sessions]);
+
+  const login = useCallback((role: UserRole, email: string): LoginResult => {
     const user = users.find(u => u.email === email && u.role === role);
     if (user) {
       // Device Fingerprint Check for Students
       if (role === UserRole.STUDENT) {
         const currentDevice = localStorage.getItem('device_fingerprint');
-        if (user.deviceId && user.deviceId !== currentDevice) {
-          alert("Access Denied: Unrecognized Device. Please use your registered device.");
-          return false;
-        }
-        // Bind device if first login (Simulated)
-        if (!user.deviceId) {
+        
+        // Case 1: User is already bound to a device
+        if (user.deviceId) {
+            if (user.deviceId !== currentDevice) {
+                return { 
+                    success: false, 
+                    message: "Access Denied: This account is bound to a different device. To prevent proxy attendance, please use your registered device." 
+                };
+            }
+        } 
+        // Case 2: First time login - bind device
+        else {
            const updatedUser = { ...user, deviceId: currentDevice || 'unknown' };
            setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
            setCurrentUser(updatedUser);
            navigateTo(View.STUDENT_DASHBOARD);
-           return true;
+           return { success: true, message: "Device registered successfully." };
         }
       }
       
@@ -77,54 +149,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         case UserRole.FACULTY: navigateTo(View.FACULTY_DASHBOARD); break;
         case UserRole.STUDENT: navigateTo(View.STUDENT_DASHBOARD); break;
       }
-      return true;
+      return { success: true };
     }
-    alert("User not found");
-    return false;
-  };
+    return { success: false, message: "User not found. Please check your role and email." };
+  }, [users, navigateTo]);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setCurrentUser(null);
     navigateTo(View.LOGIN);
-  };
+  }, [navigateTo]);
 
-  const navigateTo = (view: View) => setCurrentView(view);
-
-  const registerUser = (user: User) => {
-    setUsers([...users, user]);
-  };
-
-  const createSession = (session: Session) => {
-    setSessions([...sessions, session]);
-  };
-
-  const endSession = (sessionId: string) => {
-    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, isActive: false, endTime: Date.now() } : s));
-  };
-
-  const updateSessionToken = (sessionId: string, token: string) => {
-    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, currentDynamicToken: token } : s));
-  };
-
-  const markAttendance = (sessionId: string, studentId: string) => {
-    // Check if already marked
-    if (attendance.some(a => a.sessionId === sessionId && a.studentId === studentId)) return;
-
-    const record: AttendanceRecord = {
-      id: `att_${Date.now()}`,
-      sessionId,
-      studentId,
-      timestamp: Date.now(),
-      status: 'PRESENT'
-    };
-    setAttendance([...attendance, record]);
-  };
-
-  return (
-    <AppContext.Provider value={{
+  const value = useMemo(() => ({
       currentUser, currentView, users, departments, subjects, sessions, attendance,
       login, logout, navigateTo, registerUser, createSession, endSession, updateSessionToken, markAttendance
-    }}>
+  }), [currentUser, currentView, users, departments, subjects, sessions, attendance, login, logout, navigateTo, registerUser, createSession, endSession, updateSessionToken, markAttendance]);
+
+  return (
+    <AppContext.Provider value={value}>
       {children}
     </AppContext.Provider>
   );
