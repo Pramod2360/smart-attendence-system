@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
 import { Button, Card, Input, Badge } from '../components/Common';
-import { Users, Building2, BookOpen, LogOut, Plus, Shield } from 'lucide-react';
+import { Users, Building2, BookOpen, LogOut, Plus, Shield, Sparkles, Loader2 } from 'lucide-react';
 import { UserRole, User } from '../types';
 
 const AdminDashboard: React.FC = () => {
@@ -11,6 +11,7 @@ const AdminDashboard: React.FC = () => {
   // Add User Form State
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUser, setNewUser] = useState<Partial<User>>({ role: UserRole.STUDENT });
+  const [isFetchingApi, setIsFetchingApi] = useState(false);
 
   const handleAddUser = (e: React.FormEvent) => {
       e.preventDefault();
@@ -24,6 +25,26 @@ const AdminDashboard: React.FC = () => {
           });
           setShowAddUser(false);
           setNewUser({ role: UserRole.STUDENT });
+      }
+  };
+
+  const fetchRandomUser = async () => {
+      setIsFetchingApi(true);
+      try {
+          // Free API: randomuser.me
+          const res = await fetch('https://randomuser.me/api/');
+          const data = await res.json();
+          const user = data.results[0];
+          setNewUser({
+              name: `${user.name.first} ${user.name.last}`,
+              email: user.email,
+              role: UserRole.STUDENT,
+              department: 'CS'
+          });
+      } catch (error) {
+          console.error("Failed to fetch random user", error);
+      } finally {
+          setIsFetchingApi(false);
       }
   };
 
@@ -78,7 +99,19 @@ const AdminDashboard: React.FC = () => {
 
                  {showAddUser && (
                      <Card className="bg-indigo-50 border-indigo-100">
-                         <h3 className="font-semibold mb-4">Register New User</h3>
+                         <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-semibold">Register New User</h3>
+                            <Button 
+                                type="button" 
+                                variant="secondary" 
+                                onClick={fetchRandomUser} 
+                                disabled={isFetchingApi}
+                                className="text-xs py-1"
+                            >
+                                {isFetchingApi ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                                {isFetchingApi ? 'Fetching...' : 'Auto-Fill (API)'}
+                            </Button>
+                         </div>
                          <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <Input 
                                 placeholder="Full Name" 

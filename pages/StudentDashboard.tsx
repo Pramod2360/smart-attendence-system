@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
 import { Button, Card, Badge } from '../components/Common';
-import { Scan, MapPin, CheckCircle, XCircle, History, LogOut, Camera, ShieldAlert } from 'lucide-react';
+import { Scan, MapPin, CheckCircle, XCircle, History, LogOut, Camera, ShieldAlert, Radio, Clock } from 'lucide-react';
 import { Session } from '../types';
 
 const StudentDashboard: React.FC = () => {
@@ -12,6 +12,9 @@ const StudentDashboard: React.FC = () => {
 
   // Filter sessions active right now
   const activeSessions = sessions.filter(s => s.isActive);
+  
+  // Get recent sessions for status display
+  const recentSessions = [...sessions].sort((a, b) => b.startTime - a.startTime).slice(0, 3);
 
   const simulateScan = (type: 'LOC' | 'DYN') => {
       setStatusMsg(type === 'LOC' ? "Scanning Location Code..." : "Scanning Dynamic Token...");
@@ -95,6 +98,51 @@ const StudentDashboard: React.FC = () => {
            <Button variant="secondary" onClick={logout} className="p-2 text-red-500 hover:bg-red-50 border-none">
                <LogOut size={20} />
            </Button>
+       </div>
+
+       {/* Session Status Cards */}
+       <div className="mb-6 space-y-3">
+          <div className="flex items-center gap-2 text-slate-800 font-semibold">
+             <Radio size={18} className="text-indigo-600" /> Class Status
+          </div>
+          {recentSessions.length === 0 ? (
+              <Card className="p-4 text-center text-slate-500 text-sm bg-slate-50 border-dashed">
+                  No sessions scheduled for today.
+              </Card>
+          ) : (
+              recentSessions.map(session => {
+                  const subject = subjects.find(s => s.id === session.subjectId);
+                  const isPresent = attendance.some(a => a.sessionId === session.id && a.studentId === currentUser?.id);
+                  
+                  return (
+                      <div key={session.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center transition-all hover:shadow-md">
+                          <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-bold text-slate-800">{subject?.name || 'Unknown Class'}</h3>
+                                {isPresent && <Badge color="green">Marked</Badge>}
+                              </div>
+                              <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                                  <Clock size={12} />
+                                  {new Date(session.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                              </div>
+                          </div>
+                          <div>
+                              {session.isActive ? (
+                                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 border border-green-100 text-green-700 text-xs font-bold animate-pulse">
+                                      <span className="w-2 h-2 rounded-full bg-green-600"></span>
+                                      In Progress
+                                  </div>
+                              ) : (
+                                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-500 text-xs font-medium">
+                                      <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                                      Ended
+                                  </div>
+                              )}
+                          </div>
+                      </div>
+                  );
+              })
+          )}
        </div>
 
        {/* Scanner Area */}

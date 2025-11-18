@@ -11,6 +11,7 @@ export interface User {
   role: UserRole;
   department?: string;
   deviceId?: string; // For fingerprinting
+  mfaEnabled?: boolean;
 }
 
 export interface Department {
